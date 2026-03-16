@@ -1,0 +1,83 @@
+version: "3.9"
+
+services:
+  # ── Infrastructure ──────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: voya
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: voyadb
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U voya"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── FastAPI Backend ──────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://voya:password@postgres:5432/voyadb
+      REDIS_URL: redis://redis:6379/0
+      RECOMMENDATION_SERVICE_URL: http://recommendation:8001
+      ITINERARY_SERVICE_URL: http://itinerary:8002
+      ROUTING_SERVICE_URL: http://routing:8003
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./app:/app/app  # hot reload in dev
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # ── Go Services ──────────────────────────────────────────────────────
+  recommendation:
+    build:
+      context: ./go-services/recommendation
+      dockerfile: ../../Dockerfile.go
+    ports:
+      - "8001:8001"
+    environment:
+      PORT: "8001"
+
+  itinerary:
+    build:
+      context: ./go-services/itinerary
+      dockerfile: ../../Dockerfile.go
+    ports:
+      - "8002:8002"
+    environment:
+      PORT: "8002"
+
+  routing:
+    build:
+      context: ./go-services/routing
+      dockerfile: ../../Dockerfile.go
+    ports:
+      - "8003:8003"
+    environment:
+      PORT: "8003"
+
+volumes:
+  postgres_data:

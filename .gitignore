@@ -1,0 +1,46 @@
+# ── Python ────────────────────────────────────────────────────────────
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+htmlcov/
+.coverage
+
+# ── Environment variables (NEVER commit these) ────────────────────────
+.env
+.env.local
+.env.production
+
+# ── Go binaries ───────────────────────────────────────────────────────
+go-services/recommendation/service
+go-services/itinerary/service
+go-services/routing/service
+
+# ── Docker ────────────────────────────────────────────────────────────
+.docker/
+
+# ── Database ──────────────────────────────────────────────────────────
+*.sqlite
+*.sqlite3
+*.db
+
+# ── IDE ───────────────────────────────────────────────────────────────
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# ── OS ────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Logs ─────────────────────────────────────────────────────────────
+*.log
+logs/

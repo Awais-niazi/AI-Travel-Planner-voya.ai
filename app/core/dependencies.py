@@ -1,8 +1,8 @@
 from typing import Annotated
-from uuid import UUID
 
 from fastapi import Depends, HTTPException, Query, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import decode_token
@@ -28,14 +28,23 @@ async def get_current_user(
             detail="Invalid or expired token",
         )
 
+    # Use the subject string directly — do NOT convert through UUID()
+    # UUID() strips dashes and produces a different string than what was stored
     user_id: str = payload.get("sub", "")
+
     repo = UserRepository(db)
-    user = await repo.get_by_id(UUID(user_id))
+    user = await repo.get_by_id(user_id)
 
     if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found"
+        )
     if not user.is_active:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Inactive user")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Inactive user"
+        )
 
     return user
 

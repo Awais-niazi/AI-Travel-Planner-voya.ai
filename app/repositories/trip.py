@@ -1,6 +1,4 @@
-from uuid import UUID
-
-from sqlalchemy import select
+from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -11,40 +9,41 @@ class TripRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def get_by_id(self, trip_id: UUID) -> Trip | None:
-        result = await self.db.execute(select(Trip).where(Trip.id == trip_id))
+    async def get_by_id(self, trip_id: str) -> Trip | None:
+        result = await self.db.execute(
+            select(Trip).where(Trip.id == str(trip_id))
+        )
         return result.scalar_one_or_none()
 
-    async def get_with_details(self, trip_id: UUID) -> Trip | None:
+    async def get_with_details(self, trip_id: str) -> Trip | None:
         result = await self.db.execute(
             select(Trip)
             .options(
                 selectinload(Trip.itineraries),
                 selectinload(Trip.budget_plan),
             )
-            .where(Trip.id == trip_id)
+            .where(Trip.id == str(trip_id))
         )
         return result.scalar_one_or_none()
 
-    async def get_user_trips(self, user_id: UUID, offset: int = 0, limit: int = 20) -> list[Trip]:
+    async def get_user_trips(self, user_id: str, offset: int = 0, limit: int = 20) -> list[Trip]:
         result = await self.db.execute(
             select(Trip)
-            .where(Trip.user_id == user_id)
+            .where(Trip.user_id == str(user_id))
             .order_by(Trip.created_at.desc())
             .offset(offset)
             .limit(limit)
         )
         return list(result.scalars().all())
 
-    async def count_user_trips(self, user_id: UUID) -> int:
-        from sqlalchemy import func
+    async def count_user_trips(self, user_id: str) -> int:
         result = await self.db.execute(
-            select(func.count()).select_from(Trip).where(Trip.user_id == user_id)
+            select(func.count()).select_from(Trip).where(Trip.user_id == str(user_id))
         )
         return result.scalar_one()
 
-    async def create(self, user_id: UUID, **kwargs) -> Trip:
-        trip = Trip(user_id=user_id, **kwargs)
+    async def create(self, user_id: str, **kwargs) -> Trip:
+        trip = Trip(user_id=str(user_id), **kwargs)
         self.db.add(trip)
         await self.db.flush()
         await self.db.refresh(trip)
@@ -61,31 +60,29 @@ class TripRepository:
         await self.db.delete(trip)
         await self.db.flush()
 
-    async def save_itineraries(self, trip_id: UUID, days: list[dict]) -> list[Itinerary]:
-        # Delete existing itineraries for this trip first
-        from sqlalchemy import delete
-        await self.db.execute(delete(Itinerary).where(Itinerary.trip_id == trip_id))
-
+    async def save_itineraries(self, trip_id: str, days: list[dict]) -> list[Itinerary]:
+        await self.db.execute(
+            delete(Itinerary).where(Itinerary.trip_id == str(trip_id))
+        )
         itineraries = []
         for day in days:
             itin = Itinerary(
-                trip_id=trip_id,
+                trip_id=str(trip_id),
                 day_number=day["dayNumber"],
                 theme=day.get("theme"),
                 activities=day.get("activities", []),
             )
             self.db.add(itin)
             itineraries.append(itin)
-
         await self.db.flush()
         return itineraries
 
-    async def save_budget_plan(self, trip_id: UUID, data: dict) -> BudgetPlan:
-        from sqlalchemy import delete
-        await self.db.execute(delete(BudgetPlan).where(BudgetPlan.trip_id == trip_id))
-
+    async def save_budget_plan(self, trip_id: str, data: dict) -> BudgetPlan:
+        await self.db.execute(
+            delete(BudgetPlan).where(BudgetPlan.trip_id == str(trip_id))
+        )
         plan = BudgetPlan(
-            trip_id=trip_id,
+            trip_id=str(trip_id),
             total_budget=data.get("estimatedBudget", 0),
             currency=data.get("currency", "USD"),
             accommodation=data.get("accommodation", 0),

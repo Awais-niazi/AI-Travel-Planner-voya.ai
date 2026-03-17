@@ -5,11 +5,10 @@ import redis.asyncio as aioredis
 
 from app.core.config import settings
 
-# TTLs in seconds
-TTL_ITINERARY = 60 * 60 * 24       # 24 hours
-TTL_RECOMMENDATIONS = 60 * 60 * 6  # 6 hours
-TTL_SEARCH = 60 * 60               # 1 hour
-TTL_POPULAR = 60 * 30              # 30 minutes
+TTL_ITINERARY = 60 * 60 * 24
+TTL_RECOMMENDATIONS = 60 * 60 * 6
+TTL_SEARCH = 60 * 60
+TTL_POPULAR = 60 * 30
 
 
 class CacheService:
@@ -26,27 +25,37 @@ class CacheService:
         return self._client
 
     async def get(self, key: str) -> Any | None:
-        r = await self.client()
-        value = await r.get(key)
-        if value:
-            return json.loads(value)
+        try:
+            r = await self.client()
+            value = await r.get(key)
+            if value:
+                return json.loads(value)
+        except Exception:
+            pass
         return None
 
     async def set(self, key: str, value: Any, ttl: int = TTL_SEARCH) -> None:
-        r = await self.client()
-        await r.setex(key, ttl, json.dumps(value))
+        try:
+            r = await self.client()
+            await r.setex(key, ttl, json.dumps(value))
+        except Exception:
+            pass
 
     async def delete(self, key: str) -> None:
-        r = await self.client()
-        await r.delete(key)
+        try:
+            r = await self.client()
+            await r.delete(key)
+        except Exception:
+            pass
 
     async def delete_pattern(self, pattern: str) -> None:
-        r = await self.client()
-        keys = await r.keys(pattern)
-        if keys:
-            await r.delete(*keys)
-
-    # ── Typed helpers ──────────────────────────────────────────────────
+        try:
+            r = await self.client()
+            keys = await r.keys(pattern)
+            if keys:
+                await r.delete(*keys)
+        except Exception:
+            pass
 
     async def get_itinerary(self, trip_id: str) -> dict | None:
         return await self.get(f"itinerary:{trip_id}")
@@ -66,8 +75,11 @@ class CacheService:
         await self.delete_pattern(f"*:{trip_id}*")
 
     async def close(self) -> None:
-        if self._client:
-            await self._client.aclose()
+        try:
+            if self._client:
+                await self._client.aclose()
+        except Exception:
+            pass
 
 
 cache = CacheService()

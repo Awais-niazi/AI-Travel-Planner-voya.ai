@@ -14,11 +14,14 @@ help:
 	@echo "  make fmt              Format Go code"
 	@echo "  make build-go         Compile all Go services locally"
 
+run:
+	uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
 dev:
-	docker-compose up --build
+	docker compose up --build
 
 stop:
-	docker-compose down
+	docker compose down
 
 install:
 	.venv/bin/pip install -r requirements.txt

@@ -29,7 +29,7 @@ func (s *RecommendationService) GetRecommendations(req models.RecommendationRequ
 	}
 }
 
-func (s *RecommendationService) GetSimilarPlaces(placeID string, limit int) []models.Place {
+func (s *RecommendationService) GetSimilarPlaces(_ string, _ int) []models.Place {
 	return []models.Place{}
 }
 
@@ -37,7 +37,7 @@ func (s *RecommendationService) RecordInteraction(req models.InteractionRequest)
 	return nil
 }
 
-func (s *RecommendationService) fetchCandidates(destination string) []models.Place {
+func (s *RecommendationService) fetchCandidates(_ string) []models.Place {
 	return []models.Place{
 		{ID: "p1", Name: "Historic Old Town", Description: "The cultural heart of the city with centuries-old architecture.", Category: "attraction", Rating: 4.7, PriceLevel: 1, Tags: []string{"culture", "history", "architecture"}},
 		{ID: "p2", Name: "Central Food Market", Description: "Bustling covered market selling local produce, street food, and crafts.", Category: "restaurant", Rating: 4.5, PriceLevel: 2, Tags: []string{"food", "local", "market"}},

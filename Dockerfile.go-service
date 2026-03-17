@@ -2,7 +2,7 @@ FROM golang:1.22-alpine AS builder
 
 WORKDIR /app
 
-COPY go.mod go.sum ./
+COPY go.mod ./
 RUN go mod download
 
 COPY . .
@@ -16,6 +16,6 @@ WORKDIR /root/
 
 COPY --from=builder /app/service .
 
-EXPOSE 8001
+EXPOSE ${PORT:-8001}
 
 CMD ["./service"]

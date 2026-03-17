@@ -16,20 +16,17 @@ logger = structlog.get_logger()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # ── Startup ──
     logger.info("Starting Voya.ai API", env=settings.app_env)
 
-    # Run DB migrations on startup in dev (in prod use Alembic CLI in CI)
     if settings.app_env == "development":
         from app.db.session import Base
-        import app.models.user  # noqa: F401 — ensures models are registered
+        import app.models.user  # noqa: F401
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         logger.info("Database tables created / verified")
 
     yield
 
-    # ── Shutdown ──
     logger.info("Shutting down Voya.ai API")
     await cache.close()
     await engine.dispose()
@@ -44,17 +41,20 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# ── CORS ──────────────────────────────────────────────────────────────
+# ── CORS — only once ───────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.allowed_origins,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:5173",
+        *settings.allowed_origins,
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
-# ── Request logging middleware ─────────────────────────────────────────
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     start = time.perf_counter()
@@ -70,7 +70,6 @@ async def log_requests(request: Request, call_next):
     return response
 
 
-# ── Global error handlers ──────────────────────────────────────────────
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
     logger.error("Unhandled exception", path=request.url.path, error=str(exc))
@@ -80,7 +79,6 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     )
 
 
-# ── Routes ─────────────────────────────────────────────────────────────
 app.include_router(api_router)
 
 

@@ -1,20 +1,15 @@
 import json
 import re
 
-import anthropic
+from groq import AsyncGroq
 
 from app.core.config import settings
 
 
 class AIService:
-    """
-    Wraps the Anthropic Claude API.
-    Handles itinerary generation and the travel guide chat.
-    """
-
     def __init__(self):
-        self.client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
-        self.model = settings.anthropic_model
+        self.client = AsyncGroq(api_key=settings.anthropic_api_key)
+        self.model = "llama-3.3-70b-versatile"
 
     async def generate_itinerary(
         self,
@@ -24,10 +19,6 @@ class AIService:
         travel_style: str,
         interests: list[str],
     ) -> dict:
-        """
-        Calls Claude to generate a structured itinerary JSON.
-        Returns the parsed dict ready to be saved to DB.
-        """
         budget_map = {
             "budget": "under $50/day per person",
             "mid": "$50–150/day per person",
@@ -35,7 +26,7 @@ class AIService:
         }
         interests_str = ", ".join(interests) if interests else "general sightseeing"
 
-        prompt = f"""You are a world-class travel planner with deep local knowledge of destinations worldwide.
+        prompt = f"""You are a world-class travel planner with deep local knowledge.
 
 Create a detailed {num_days}-day travel itinerary for {destination}.
 
@@ -48,7 +39,7 @@ Trip details:
 Return ONLY a valid JSON object with NO markdown fences, NO preamble. Use this exact structure:
 {{
   "destination": "City, Country",
-  "tagline": "One evocative sentence capturing the destination's essence",
+  "tagline": "One evocative sentence capturing the destination essence",
   "estimatedBudget": 850,
   "currency": "USD",
   "accommodation": 300,
@@ -65,7 +56,7 @@ Return ONLY a valid JSON object with NO markdown fences, NO preamble. Use this e
         {{
           "time": "9:00 AM",
           "name": "Activity name",
-          "description": "2-3 sentences with authentic local tips and what makes it special.",
+          "description": "2-3 sentences with authentic local tips.",
           "type": "sightseeing",
           "estimatedCost": 0,
           "duration": "2 hours",
@@ -79,22 +70,22 @@ Return ONLY a valid JSON object with NO markdown fences, NO preamble. Use this e
 }}
 
 Rules:
-- 4-6 activities per day, spread across morning, afternoon, and evening
-- Always include at least one meal per day (breakfast, lunch, or dinner)
-- Make it locally authentic — avoid generic tourist traps
+- 4-6 activities per day across morning, afternoon, and evening
+- Always include at least one meal per day
+- Make it locally authentic
 - Include latitude/longitude for every activity
 - Tags from: Free, Must-see, Hidden gem, Budget-friendly, Splurge, Local favourite, Foodie pick, Nature, Cultural, Nightlife
-- estimatedCost in USD for each activity (0 for free items)
-- total estimatedBudget = sum of accommodation + food + transport + activities + miscellaneous for the whole trip"""
+- estimatedCost in USD for each activity
+- Return ONLY the JSON object, nothing else"""
 
-        message = await self.client.messages.create(
+        response = await self.client.chat.completions.create(
             model=self.model,
-            max_tokens=4000,
             messages=[{"role": "user", "content": prompt}],
+            max_tokens=4000,
+            temperature=0.7,
         )
 
-        raw = "".join(block.text for block in message.content if hasattr(block, "text"))
-        # Strip any accidental markdown fences
+        raw = response.choices[0].message.content
         clean = re.sub(r"```json|```", "", raw).strip()
         return json.loads(clean)
 
@@ -103,29 +94,26 @@ Rules:
         messages: list[dict],
         trip_context: str | None = None,
     ) -> str:
-        """
-        Multi-turn travel guide chat.
-        Maintains history via the messages list passed in.
-        """
         system = (
             "You are Voya, a friendly and expert AI travel guide with knowledge of every "
             "destination worldwide. You help travellers with destination advice, local customs, "
             "visa requirements, food recommendations, transport tips, packing lists, safety, "
-            "and anything else travel-related. Be conversational, warm, specific, and concise. "
-            "Avoid generic advice — give the kind of tips a well-travelled local friend would share."
+            "and anything else travel-related. Be conversational, warm, specific, and concise."
         )
 
         if trip_context:
             system += f"\n\nThe user currently has a trip planned: {trip_context}"
 
-        response = await self.client.messages.create(
+        groq_messages = [{"role": "system", "content": system}] + messages
+
+        response = await self.client.chat.completions.create(
             model=self.model,
+            messages=groq_messages,
             max_tokens=1000,
-            system=system,
-            messages=messages,
+            temperature=0.7,
         )
 
-        return "".join(block.text for block in response.content if hasattr(block, "text"))
+        return response.choices[0].message.content
 
 
 ai_service = AIService()

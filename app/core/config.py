@@ -20,9 +20,9 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str = ""
 
-    # Anthropic
+    # AI — now using Groq
     anthropic_api_key: str = ""
-    anthropic_model: str = "claude-sonnet-4-20250514"
+    anthropic_model: str = "llama-3.3-70b-versatile"
 
     # JWT
     jwt_secret_key: str = "changeme-jwt"

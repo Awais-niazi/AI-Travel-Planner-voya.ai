@@ -25,6 +25,9 @@ celery==5.4.0
 # Anthropic
 anthropic==0.34.2
 
+# Groq
+groq==1.1.1
+
 # HTTP Client
 httpx==0.27.2
 

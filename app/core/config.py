@@ -14,8 +14,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
     debug: bool = False
     secret_key: str = "changeme"
-    allowed_origins: list[str] = ["http://localhost:3000"]
-
+    allowed_origins_str: str = "http://localhost:3000"
     # Database
     database_url: str = "postgresql+asyncpg://voya:password@localhost:5432/voyadb"
     database_url_sync: str = "postgresql://voya:password@localhost:5432/voyadb"
@@ -41,6 +40,17 @@ class Settings(BaseSettings):
     # External APIs
     google_maps_api_key: str = ""
     weather_api_key: str = ""
+
+    @property
+    def allowed_origins(self) -> list[str]:
+        val = self.allowed_origins_str.strip()
+        if val.startswith("["):
+         import json
+         try:
+            return json.loads(val)
+         except Exception:
+            pass
+        return [v.strip() for v in val.split(",") if v.strip()]
 
     @field_validator("debug", mode="before")
     @classmethod

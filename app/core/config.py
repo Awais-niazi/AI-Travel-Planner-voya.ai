@@ -1,8 +1,5 @@
 from functools import lru_cache
 import json
-from typing import Any
-
-from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -15,6 +12,7 @@ class Settings(BaseSettings):
     debug: bool = False
     secret_key: str = "changeme"
     allowed_origins_str: str = "http://localhost:3000"
+
     # Database
     database_url: str = "postgresql+asyncpg://voya:password@localhost:5432/voyadb"
     database_url_sync: str = "postgresql://voya:password@localhost:5432/voyadb"
@@ -45,32 +43,11 @@ class Settings(BaseSettings):
     def allowed_origins(self) -> list[str]:
         val = self.allowed_origins_str.strip()
         if val.startswith("["):
-         import json
-         try:
-            return json.loads(val)
-         except Exception:
-            pass
+            try:
+                return json.loads(val)
+            except Exception:
+                pass
         return [v.strip() for v in val.split(",") if v.strip()]
-
-    @field_validator("debug", mode="before")
-    @classmethod
-    def parse_debug(cls, v: Any) -> bool:
-        if isinstance(v, str):
-            return v.lower() in ("true", "1", "yes")
-        return v
-
-    @field_validator("allowed_origins", mode="before")
-    @classmethod
-    def parse_allowed_origins(cls, v: Any) -> list[str]:
-        if isinstance(v, str):
-            v = v.strip()
-            if v.startswith("["):
-                try:
-                    return json.loads(v)
-                except Exception:
-                    pass
-            return [i.strip() for i in v.split(",") if i.strip()]
-        return v
 
 
 @lru_cache

@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -38,6 +39,22 @@ class Settings(BaseSettings):
     google_maps_api_key: str = ""
     weather_api_key: str = ""
 
+    @field_validator("allowed_origins", mode="before")
+    @classmethod
+    def parse_allowed_origins(cls, v):
+        if isinstance(v, str):
+            v = v.strip()
+            # Handle JSON array format: ["url1","url2"]
+            if v.startswith("["):
+                import json
+                try:
+                    return json.loads(v)
+                except Exception:
+                    pass
+            # Handle comma separated: url1,url2
+            return [i.strip() for i in v.split(",") if i.strip()]
+        return v
+
 
 @lru_cache
 def get_settings() -> Settings:
@@ -45,3 +62,4 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
+

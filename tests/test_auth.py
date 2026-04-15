@@ -1,5 +1,6 @@
 import pytest
 from httpx import AsyncClient, ASGITransport
+from app.core.config import settings
 
 
 @pytest.fixture
@@ -94,3 +95,35 @@ async def test_get_me(client: AsyncClient):
 async def test_get_me_unauthorized(client: AsyncClient):
     response = await client.get("/api/v1/auth/me")
     assert response.status_code in (401, 403)
+
+
+@pytest.mark.asyncio
+async def test_login_rate_limited(client: AsyncClient):
+    await register(client, email="ratelimit@voya.ai")
+
+    last_response = None
+    for _ in range(9):
+        last_response = await client.post(
+            "/api/v1/auth/login",
+            json={"email": "ratelimit@voya.ai", "password": "BadPassword1"},
+        )
+
+    assert last_response is not None
+    assert last_response.status_code == 429
+    assert last_response.headers["Retry-After"]
+
+
+@pytest.mark.asyncio
+async def test_chat_returns_503_when_chat_disabled(client: AsyncClient):
+    settings.enable_ai_chat = False
+    reg = await register(client, email="chatdisabled@voya.ai")
+    token = reg.json()["access_token"]
+
+    response = await client.post(
+        "/api/v1/chat",
+        json={"messages": [{"role": "user", "content": "Hello"}]},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 503
+    assert "temporarily unavailable" in response.json()["detail"].lower()

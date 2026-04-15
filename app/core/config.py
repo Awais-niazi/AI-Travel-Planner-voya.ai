@@ -1,5 +1,6 @@
 from functools import lru_cache
 import json
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,7 +12,10 @@ class Settings(BaseSettings):
     app_env: str = "development"
     debug: bool = False
     secret_key: str = "changeme"
-    allowed_origins_str: str = "http://localhost:3000"
+    allowed_origins_str: str = Field(
+        default="http://localhost:3000",
+        validation_alias="ALLOWED_ORIGINS",
+    )
 
     # Database
     database_url: str = "postgresql+asyncpg://voya:password@localhost:5432/voyadb"
@@ -23,6 +27,11 @@ class Settings(BaseSettings):
     # AI — now using Groq
     anthropic_api_key: str = ""
     anthropic_model: str = "llama-3.3-70b-versatile"
+    ai_timeout_seconds: int = 20
+    ai_circuit_failure_threshold: int = 3
+    ai_circuit_cooldown_seconds: int = 60
+    enable_ai_chat: bool = True
+    enable_trip_generation: bool = True
 
     # JWT
     jwt_secret_key: str = "changeme-jwt"

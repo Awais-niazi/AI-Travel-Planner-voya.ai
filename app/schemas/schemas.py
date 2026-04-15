@@ -186,6 +186,16 @@ class GenerateItineraryResponse(BaseModel):
     message: str
 
 
+class TripGenerationJobOut(BaseSchema):
+    id: UUID
+    trip_id: UUID
+    user_id: UUID
+    status: str
+    error_message: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
 # ── Pagination ──────────────────────────────────────────────────────────
 class PaginatedResponse(BaseModel):
     items: list[Any]

@@ -1,27 +1,19 @@
-import asyncio
 import os
 
-import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import inspect, text
 
-os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
-os.environ["DATABASE_URL_SYNC"] = "sqlite:///./test.db"
+os.environ["DATABASE_URL"] = "sqlite+aiosqlite:////tmp/voya_test.db"
+os.environ["DATABASE_URL_SYNC"] = "sqlite:////tmp/voya_test.db"
+os.environ["APP_ENV"] = "test"
+os.environ["DEBUG"] = "false"
 os.environ["SECRET_KEY"] = "test-secret-key"
 os.environ["JWT_SECRET_KEY"] = "test-jwt-key"
 os.environ["ANTHROPIC_API_KEY"] = "test-key"
-os.environ["REDIS_URL"] = "redis://localhost:6379/15"
+os.environ["REDIS_URL"] = ""
 
-
-@pytest.fixture(scope="session")
-def event_loop():
-    policy = asyncio.get_event_loop_policy()
-    loop = policy.new_event_loop()
-    yield loop
-    loop.close()
-
-
-@pytest_asyncio.fixture(scope="session", autouse=True)
+@pytest_asyncio.fixture(autouse=True)
 async def setup_test_db():
     import app.models.user  # noqa: F401
     from app.db.session import Base, engine
@@ -40,16 +32,21 @@ async def setup_test_db():
 @pytest_asyncio.fixture(autouse=True)
 async def clean_tables():
     yield
-    from sqlalchemy import text
     from app.db.session import engine
+    from app.services.ai_protection_service import ai_protection
+    from app.services.rate_limit_service import rate_limiter
+    from app.core.config import settings
+
+    ai_protection.reset()
+    rate_limiter.reset()
+    settings.enable_ai_chat = True
+    settings.enable_trip_generation = True
 
     async with engine.begin() as conn:
-        await conn.execute(text("DELETE FROM reviews"))
-        await conn.execute(text("DELETE FROM budget_plans"))
-        await conn.execute(text("DELETE FROM itineraries"))
-        await conn.execute(text("DELETE FROM trips"))
-        await conn.execute(text("DELETE FROM places"))
-        await conn.execute(text("DELETE FROM users"))
+        table_names = set(await conn.run_sync(lambda sync_conn: inspect(sync_conn).get_table_names()))
+        for table in ("reviews", "budget_plans", "itineraries", "trips", "places", "users"):
+            if table in table_names:
+                await conn.execute(text(f"DELETE FROM {table}"))
 
 
 @pytest_asyncio.fixture

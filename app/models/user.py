@@ -1,7 +1,17 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSON as PG_JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -61,6 +71,9 @@ class User(TimestampMixin, Base):
 
 class Trip(TimestampMixin, Base):
     __tablename__ = "trips"
+    __table_args__ = (
+        Index("ix_trips_user_id_created_at", "user_id", "created_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
@@ -79,10 +92,19 @@ class Trip(TimestampMixin, Base):
     user: Mapped["User"] = relationship("User", back_populates="trips")
     itineraries: Mapped[list["Itinerary"]] = relationship("Itinerary", back_populates="trip", cascade="all, delete-orphan")
     budget_plan: Mapped["BudgetPlan"] = relationship("BudgetPlan", back_populates="trip", uselist=False)
+    generation_jobs: Mapped[list["TripGenerationJob"]] = relationship(
+        "TripGenerationJob",
+        back_populates="trip",
+        cascade="all, delete-orphan",
+    )
 
 
 class Itinerary(TimestampMixin, Base):
     __tablename__ = "itineraries"
+    __table_args__ = (
+        Index("ix_itineraries_trip_id", "trip_id"),
+        UniqueConstraint("trip_id", "day_number", name="uq_itineraries_trip_id_day_number"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     trip_id: Mapped[str] = mapped_column(String(36), ForeignKey("trips.id"), nullable=False)
@@ -141,3 +163,19 @@ class BudgetPlan(TimestampMixin, Base):
     breakdown: Mapped[dict] = mapped_column(JSON, default=dict)
 
     trip: Mapped["Trip"] = relationship("Trip", back_populates="budget_plan")
+
+
+class TripGenerationJob(TimestampMixin, Base):
+    __tablename__ = "trip_generation_jobs"
+    __table_args__ = (
+        Index("ix_trip_generation_jobs_trip_id_status", "trip_id", "status"),
+        Index("ix_trip_generation_jobs_user_id_created_at", "user_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    trip_id: Mapped[str] = mapped_column(String(36), ForeignKey("trips.id"), nullable=False)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    trip: Mapped["Trip"] = relationship("Trip", back_populates="generation_jobs")

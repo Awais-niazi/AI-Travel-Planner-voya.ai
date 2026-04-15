@@ -2,7 +2,7 @@ from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.user import BudgetPlan, Itinerary, Trip
+from app.models.user import BudgetPlan, Itinerary, Trip, TripGenerationJob
 
 
 class TripRepository:
@@ -96,3 +96,48 @@ class TripRepository:
         await self.db.flush()
         await self.db.refresh(plan)
         return plan
+
+    async def get_active_generation_job(self, trip_id: str) -> TripGenerationJob | None:
+        result = await self.db.execute(
+            select(TripGenerationJob)
+            .where(
+                TripGenerationJob.trip_id == str(trip_id),
+                TripGenerationJob.status.in_(("pending", "running")),
+            )
+            .order_by(TripGenerationJob.created_at.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def create_generation_job(self, trip_id: str, user_id: str) -> TripGenerationJob:
+        job = TripGenerationJob(
+            trip_id=str(trip_id),
+            user_id=str(user_id),
+            status="pending",
+        )
+        self.db.add(job)
+        await self.db.flush()
+        await self.db.refresh(job)
+        return job
+
+    async def get_generation_job(self, job_id: str) -> TripGenerationJob | None:
+        result = await self.db.execute(
+            select(TripGenerationJob).where(TripGenerationJob.id == str(job_id))
+        )
+        return result.scalar_one_or_none()
+
+    async def update_generation_job(self, job: TripGenerationJob, **kwargs) -> TripGenerationJob:
+        for key, value in kwargs.items():
+            setattr(job, key, value)
+        await self.db.flush()
+        await self.db.refresh(job)
+        return job
+
+    async def get_latest_generation_job(self, trip_id: str) -> TripGenerationJob | None:
+        result = await self.db.execute(
+            select(TripGenerationJob)
+            .where(TripGenerationJob.trip_id == str(trip_id))
+            .order_by(TripGenerationJob.created_at.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()

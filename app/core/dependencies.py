@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, Query, status
+from fastapi import Depends, HTTPException, Query, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +9,7 @@ from app.core.security import decode_token
 from app.db.session import get_session
 from app.models.user import User
 from app.repositories.user import UserRepository
+from app.services.rate_limit_service import rate_limiter
 
 bearer_scheme = HTTPBearer()
 
@@ -73,3 +74,30 @@ class Pagination:
         self.page = page
         self.page_size = page_size
         self.offset = (page - 1) * page_size
+
+
+def _client_ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+def enforce_rate_limit(
+    request: Request,
+    scope: str,
+    max_requests: int,
+    window_seconds: int,
+    user_id: str | None = None,
+) -> None:
+    client_ip = _client_ip(request)
+    keys = [f"{scope}:ip:{client_ip}"]
+    if user_id:
+        keys.append(f"{scope}:user:{user_id}")
+
+    retry_after = 0
+    for key in keys:
+        allowed, retry_after = rate_limiter.check(key, max_requests=max_requests, window_seconds=window_seconds)
+        if not allowed:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many requests. Please try again soon.",
+                headers={"Retry-After": str(retry_after)},
+            )

@@ -1,21 +1,48 @@
 import math
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 
-from app.core.dependencies import CurrentUser, DBSession, Pagination
+from app.core.dependencies import CurrentUser, DBSession, Pagination, enforce_rate_limit
 from app.repositories.trip import TripRepository
 from app.schemas.schemas import (
     GenerateItineraryRequest,
     ItineraryUpdate,
     PaginatedResponse,
+    TripGenerationJobOut,
     TripCreate,
     TripOut,
     TripWithItinerary,
 )
-from app.services.ai_service import ai_service
 from app.services.cache_service import cache
+from app.services.ai_protection_service import AIServiceUnavailable
+from app.services.feature_gate_service import ensure_trip_generation_enabled
+from app.services.trip_generation_service import generate_trip_for_trip, process_generation_job
 
 router = APIRouter(prefix="/trips", tags=["Trips"])
+
+
+async def _queue_generation_job_for_trip(
+    trip_id: str,
+    current_user: CurrentUser,
+    db: DBSession,
+    background_tasks: BackgroundTasks,
+):
+    repo = TripRepository(db)
+    trip = await repo.get_by_id(trip_id)
+
+    if not trip:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trip not found")
+    if str(trip.user_id) != str(current_user.id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your trip")
+
+    existing_job = await repo.get_active_generation_job(trip_id)
+    if existing_job:
+        return existing_job
+
+    await repo.update(trip, status="generating")
+    job = await repo.create_generation_job(trip_id=trip_id, user_id=str(current_user.id))
+    background_tasks.add_task(process_generation_job, str(job.id))
+    return job
 
 
 @router.post("", response_model=TripOut, status_code=status.HTTP_201_CREATED)
@@ -84,12 +111,99 @@ async def delete_trip(trip_id: str, current_user: CurrentUser, db: DBSession):
     await cache.invalidate_trip(str(trip_id))
 
 
-@router.post("/generate", response_model=TripWithItinerary)
-async def generate_itinerary(
+@router.post("/generate-async", response_model=TripGenerationJobOut, status_code=status.HTTP_202_ACCEPTED)
+async def generate_itinerary_async(
     body: GenerateItineraryRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
     current_user: CurrentUser,
     db: DBSession,
 ):
+    enforce_rate_limit(
+        request,
+        scope="trip_generate_async",
+        max_requests=5,
+        window_seconds=300,
+        user_id=str(current_user.id),
+    )
+    ensure_trip_generation_enabled()
+    return await _queue_generation_job_for_trip(
+        trip_id=str(body.trip_id),
+        current_user=current_user,
+        db=db,
+        background_tasks=background_tasks,
+    )
+
+
+@router.post("/{trip_id}/generation-jobs", response_model=TripGenerationJobOut, status_code=status.HTTP_202_ACCEPTED)
+async def create_generation_job(
+    trip_id: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    current_user: CurrentUser,
+    db: DBSession,
+):
+    enforce_rate_limit(
+        request,
+        scope="trip_generation_jobs",
+        max_requests=5,
+        window_seconds=300,
+        user_id=str(current_user.id),
+    )
+    ensure_trip_generation_enabled()
+    return await _queue_generation_job_for_trip(
+        trip_id=trip_id,
+        current_user=current_user,
+        db=db,
+        background_tasks=background_tasks,
+    )
+
+
+@router.get("/generation-jobs/{job_id}", response_model=TripGenerationJobOut)
+async def get_generation_job(job_id: str, current_user: CurrentUser, db: DBSession):
+    repo = TripRepository(db)
+    job = await repo.get_generation_job(job_id)
+
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Generation job not found")
+    if str(job.user_id) != str(current_user.id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your generation job")
+
+    return job
+
+
+@router.get("/{trip_id}/generation-jobs/latest", response_model=TripGenerationJobOut)
+async def get_latest_generation_job(trip_id: str, current_user: CurrentUser, db: DBSession):
+    repo = TripRepository(db)
+    trip = await repo.get_by_id(trip_id)
+
+    if not trip:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trip not found")
+    if str(trip.user_id) != str(current_user.id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your trip")
+
+    job = await repo.get_latest_generation_job(trip_id)
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Generation job not found")
+
+    return job
+
+
+@router.post("/generate", response_model=TripWithItinerary)
+async def generate_itinerary(
+    body: GenerateItineraryRequest,
+    request: Request,
+    current_user: CurrentUser,
+    db: DBSession,
+):
+    enforce_rate_limit(
+        request,
+        scope="trip_generate_sync",
+        max_requests=5,
+        window_seconds=300,
+        user_id=str(current_user.id),
+    )
+    ensure_trip_generation_enabled()
     repo = TripRepository(db)
     trip = await repo.get_by_id(str(body.trip_id))
 
@@ -103,25 +217,13 @@ async def generate_itinerary(
         trip = await repo.get_with_details(str(trip.id))
         return trip
 
-    itinerary_data = await ai_service.generate_itinerary(
-        destination=trip.destination,
-        num_days=trip.num_days,
-        budget_level=trip.budget_level,
-        travel_style=trip.travel_style,
-        interests=trip.interests or [],
-    )
-
-    await repo.save_itineraries(str(trip.id), itinerary_data.get("days", []))
-    await repo.save_budget_plan(str(trip.id), itinerary_data)
-    await repo.update(
-        trip,
-        status="generated",
-        tagline=itinerary_data.get("tagline"),
-        destination_country=itinerary_data.get("destination", "").split(",")[-1].strip(),
-        budget_amount=itinerary_data.get("estimatedBudget"),
-    )
-
-    await cache.set_itinerary(str(trip.id), itinerary_data)
+    try:
+        await generate_trip_for_trip(repo, trip)
+    except AIServiceUnavailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
 
     full_trip = await repo.get_with_details(str(trip.id))
     return full_trip

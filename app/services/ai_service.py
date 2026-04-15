@@ -1,9 +1,11 @@
+import asyncio
 import json
 import re
 
 from groq import AsyncGroq
 
 from app.core.config import settings
+from app.services.ai_protection_service import AIServiceUnavailable, ai_protection
 
 
 class AIService:
@@ -78,16 +80,30 @@ Rules:
 - estimatedCost in USD for each activity
 - Return ONLY the JSON object, nothing else"""
 
-        response = await self.client.chat.completions.create(
-            model=self.model,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=4000,
-            temperature=0.7,
-        )
-
-        raw = response.choices[0].message.content
-        clean = re.sub(r"```json|```", "", raw).strip()
-        return json.loads(clean)
+        ai_protection.guard()
+        try:
+            response = await asyncio.wait_for(
+                self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=4000,
+                    temperature=0.7,
+                ),
+                timeout=settings.ai_timeout_seconds,
+            )
+            raw = response.choices[0].message.content
+            clean = re.sub(r"```json|```", "", raw).strip()
+            parsed = json.loads(clean)
+            ai_protection.record_success()
+            return parsed
+        except AIServiceUnavailable:
+            raise
+        except Exception as exc:
+            ai_protection.record_failure(
+                threshold=settings.ai_circuit_failure_threshold,
+                cooldown_seconds=settings.ai_circuit_cooldown_seconds,
+            )
+            raise AIServiceUnavailable("AI itinerary generation is unavailable") from exc
 
     async def chat(
         self,
@@ -106,14 +122,27 @@ Rules:
 
         groq_messages = [{"role": "system", "content": system}] + messages
 
-        response = await self.client.chat.completions.create(
-            model=self.model,
-            messages=groq_messages,
-            max_tokens=1000,
-            temperature=0.7,
-        )
-
-        return response.choices[0].message.content
+        ai_protection.guard()
+        try:
+            response = await asyncio.wait_for(
+                self.client.chat.completions.create(
+                    model=self.model,
+                    messages=groq_messages,
+                    max_tokens=1000,
+                    temperature=0.7,
+                ),
+                timeout=settings.ai_timeout_seconds,
+            )
+            ai_protection.record_success()
+            return response.choices[0].message.content
+        except AIServiceUnavailable:
+            raise
+        except Exception as exc:
+            ai_protection.record_failure(
+                threshold=settings.ai_circuit_failure_threshold,
+                cooldown_seconds=settings.ai_circuit_cooldown_seconds,
+            )
+            raise AIServiceUnavailable("AI chat is unavailable") from exc
 
 
 ai_service = AIService()

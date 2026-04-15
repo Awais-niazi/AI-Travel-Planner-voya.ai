@@ -3,7 +3,7 @@ services:
     name: voya-backend
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: python scripts/check_env.py && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    startCommand: python scripts/check_env.py && alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION

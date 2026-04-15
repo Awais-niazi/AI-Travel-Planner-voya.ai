@@ -9,14 +9,16 @@ from app.core.config import settings
 # SQLite (used in tests) does not support pool_size/max_overflow/pool_pre_ping.
 # Detect by URL prefix and apply the appropriate engine kwargs.
 _is_sqlite = settings.database_url.startswith("sqlite")
+_is_sqlite_memory = _is_sqlite and ":memory:" in settings.database_url
 
 if _is_sqlite:
-    engine = create_async_engine(
-        settings.database_url,
-        echo=settings.debug,
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+    sqlite_engine_kwargs = {
+        "echo": settings.debug,
+        "connect_args": {"check_same_thread": False},
+    }
+    if _is_sqlite_memory:
+        sqlite_engine_kwargs["poolclass"] = StaticPool
+    engine = create_async_engine(settings.database_url, **sqlite_engine_kwargs)
 else:
     engine = create_async_engine(
         settings.database_url,

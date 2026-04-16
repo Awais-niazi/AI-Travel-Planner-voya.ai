@@ -37,6 +37,8 @@ async def _queue_generation_job_for_trip(
 
     existing_job = await repo.get_active_generation_job(trip_id)
     if existing_job:
+        if existing_job.status == "pending":
+            background_tasks.add_task(process_generation_job, str(existing_job.id))
         return existing_job
 
     await repo.update(trip, status="generating")

@@ -300,6 +300,41 @@ async def test_generate_async_endpoint_creates_job(client: AsyncClient, monkeypa
 
 
 @pytest.mark.asyncio
+async def test_existing_pending_generation_job_is_requeued(client: AsyncClient, monkeypatch):
+    queued_job_ids = []
+
+    async def capture_job(job_id: str):
+        queued_job_ids.append(job_id)
+
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.trips.process_generation_job",
+        capture_job,
+    )
+
+    token = await register_and_login(client, "requeuejob@voya.ai")
+    create = await client.post(
+        "/api/v1/trips",
+        json={"destination": "Paris, France", "num_days": 4, "budget_level": "mid"},
+        headers=auth(token),
+    )
+    trip_id = create.json()["id"]
+
+    first = await client.post(
+        f"/api/v1/trips/{trip_id}/generation-jobs",
+        headers=auth(token),
+    )
+    second = await client.post(
+        f"/api/v1/trips/{trip_id}/generation-jobs",
+        headers=auth(token),
+    )
+
+    assert first.status_code == 202
+    assert second.status_code == 202
+    assert second.json()["id"] == first.json()["id"]
+    assert queued_job_ids == [first.json()["id"], first.json()["id"]]
+
+
+@pytest.mark.asyncio
 async def test_get_latest_generation_job(client: AsyncClient, monkeypatch):
     monkeypatch.setattr(
         "app.api.v1.endpoints.trips.process_generation_job",

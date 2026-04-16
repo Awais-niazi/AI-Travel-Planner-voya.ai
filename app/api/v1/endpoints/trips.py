@@ -38,11 +38,13 @@ async def _queue_generation_job_for_trip(
     existing_job = await repo.get_active_generation_job(trip_id)
     if existing_job:
         if existing_job.status == "pending":
+            await db.commit()
             background_tasks.add_task(process_generation_job, str(existing_job.id))
         return existing_job
 
     await repo.update(trip, status="generating")
     job = await repo.create_generation_job(trip_id=trip_id, user_id=str(current_user.id))
+    await db.commit()
     background_tasks.add_task(process_generation_job, str(job.id))
     return job
 
